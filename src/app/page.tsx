@@ -99,6 +99,7 @@ export default function Home() {
   // Main state
   const [tasks, setTasks] = useState<Task[]>([]);
   const [tasksLoading, setTasksLoading] = useState(true);
+  const [tasksLoadFailed, setTasksLoadFailed] = useState(false);
   const [title, setTitle] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [recurrence, setRecurrence] = useState<Recurrence>("none");
@@ -135,6 +136,7 @@ export default function Home() {
       if (!res.ok) throw new Error();
       const data: Task[] = await res.json();
       setTasks(data);
+      setTasksLoadFailed(false);
       if (notifyExpired) {
         const now = new Date();
         const expired = data.filter(
@@ -145,7 +147,7 @@ export default function Home() {
         }
       }
     } catch {
-      toast.error("Não foi possível carregar as tarefas");
+      setTasksLoadFailed(true);
     } finally {
       setTasksLoading(false);
     }
@@ -676,6 +678,14 @@ export default function Home() {
           <div className="empty-state panel" role="status">
             <span className="loading-dot" />
             Carregando suas tarefas…
+          </div>
+        ) : tasksLoadFailed ? (
+          <div className="empty-state panel" role="status">
+            <h3>Suas tarefas estão indisponíveis no momento</h3>
+            <p>Tente carregar a lista novamente em instantes.</p>
+            <button className="button compact" style={{ marginTop: 16 }} onClick={() => { setTasksLoading(true); fetchTasks(false); }}>
+              Tentar novamente
+            </button>
           </div>
         ) : displayedTasks.length === 0 ? (
           <div className="empty-state panel">
