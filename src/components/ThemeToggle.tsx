@@ -30,9 +30,10 @@ export default function ThemeToggle() {
     };
     mq.addEventListener("change", handler);
 
-    if (theme === "system") {
-      document.documentElement.classList.toggle("dark", mq.matches);
-    }
+    document.documentElement.classList.toggle(
+      "dark",
+      theme === "dark" || (theme === "system" && mq.matches),
+    );
 
     return () => {
       mq.removeEventListener("change", handler);
@@ -53,9 +54,10 @@ export default function ThemeToggle() {
 
   return (
     <select
+      aria-label="Tema da interface"
       value={theme}
       onChange={handleChange}
-      className="border px-2 py-1 rounded text-sm text-[var(--foreground)] bg-transparent"
+      className="theme-select"
     >
       <option value="light">☀️ Claro</option>
       <option value="dark">🌙 Escuro</option>
