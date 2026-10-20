@@ -6,6 +6,17 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
+### Code organization and tests
+
+The task workspace state and operations live in `src/hooks/useTaskWorkspace.ts`.
+`src/lib/tasks.ts` contains task filters, summaries and date helpers, and
+`src/lib/tasks-api.ts` centralizes HTTP response handling. Login and confirmation
+dialogs are independent components in `src/components`.
+
+Run `npm test` with Node.js 22.18+ (validated with Node.js 24) for task filtering,
+summary, local date conversion and API error handling tests. Run `npm run build`
+for production compilation and framework checks.
+
 First, run the development server:
 
 ```bash

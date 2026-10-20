@@ -1,358 +1,71 @@
 "use client";
-
-import { useSession, signIn } from "next-auth/react";
-import AppShell, { Brand } from "@/components/AppShell";
+import { useSession } from "next-auth/react";
+import AppShell from "@/components/AppShell";
 import Icon from "@/components/Icon";
-import { useEffect, useState, useRef, useId } from "react";
-import { toast } from "sonner";
-import ThemeToggle from "@/components/ThemeToggle";
+import ConfirmModal from "@/components/ConfirmModal";
+import LoginPage from "@/components/LoginPage";
 import { motion } from "framer-motion";
-
-type Recurrence = "none" | "daily" | "weekly" | "monthly";
-type FilterType = "all" | "pending" | "completed";
-
-type Task = {
-  _id: string;
-  title: string;
-  done: boolean;
-  createdAt?: string;
-  dueDate?: string;
-  recurrence: Recurrence;
-};
-
-const filterOptions: { label: string; value: FilterType }[] = [
-  { label: "Todas", value: "all" },
-  { label: "Pendentes", value: "pending" },
-  { label: "Concluídas", value: "completed" },
-];
-
-const recurrenceOptions: { label: string; value: Recurrence }[] = [
-  { label: "Sem recorrência", value: "none" },
-  { label: "Diária", value: "daily" },
-  { label: "Semanal", value: "weekly" },
-  { label: "Mensal", value: "monthly" },
-];
-
-function formatDateTimeLocal(iso?: string) {
-  if (!iso) return "";
-  return new Date(iso).toLocaleString("pt-BR", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
-type ConfirmProps = {
-  isOpen: boolean;
-  title: string;
-  message: string;
-  onConfirm: () => void;
-  onCancel: () => void;
-};
-
-function ConfirmModal({
-  isOpen,
-  title,
-  message,
-  onConfirm,
-  onCancel,
-}: ConfirmProps) {
-  const ref = useRef<HTMLDialogElement>(null);
-  const headingId = useId();
-  useEffect(() => {
-    const dialog = ref.current;
-    if (isOpen && dialog && !dialog.open) dialog.showModal();
-    if (!isOpen && dialog?.open) dialog.close();
-  }, [isOpen]);
-  return (
-    <dialog
-      ref={ref}
-      className="confirm-dialog"
-      aria-labelledby={headingId}
-      onCancel={(e) => {
-        e.preventDefault();
-        onCancel();
-      }}
-    >
-      <div className="dialog-symbol">
-        <Icon name="trash" size={26} />
-      </div>
-      <h2 id={headingId}>{title}</h2>
-      <p>{message}</p>
-      <div className="dialog-actions">
-        <button className="button" onClick={onCancel} autoFocus>
-          Cancelar
-        </button>
-        <button className="button danger" onClick={onConfirm}>
-          Confirmar
-        </button>
-      </div>
-    </dialog>
-  );
-}
+import { useTaskWorkspace } from "@/hooks/useTaskWorkspace";
+import {
+  selectTasks,
+  summarizeTasks,
+  filterOptions,
+  recurrenceOptions,
+  formatDateTimeLocal,
+} from "@/lib/tasks";
+import type { Recurrence } from "@/lib/tasks";
 
 export default function Home() {
   const { data: session, status } = useSession();
-
-  // Main state
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [tasksLoading, setTasksLoading] = useState(true);
-  const [tasksLoadFailed, setTasksLoadFailed] = useState(false);
-  const [title, setTitle] = useState("");
-  const [dueDate, setDueDate] = useState("");
-  const [recurrence, setRecurrence] = useState<Recurrence>("none");
-
-  // Inline editing
-  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
-  const [editingTitle, setEditingTitle] = useState("");
-  const [editingDueDate, setEditingDueDate] = useState("");
-  const [editingRecurrence, setEditingRecurrence] =
-    useState<Recurrence>("none");
-
-  // Filter/search/sort
-  const [filter, setFilter] = useState<FilterType>("all");
-  const [searchTerm, setSearchTerm] = useState("");
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
-
-  // Batch mode
-  const [batchMode, setBatchMode] = useState(false);
-  const [selected, setSelected] = useState<string[]>([]);
-  const [showConfirmMark, setShowConfirmMark] = useState(false);
-  const [showConfirmDelete, setShowConfirmDelete] = useState(false);
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Load tasks
-  useEffect(() => {
-    if (session) fetchTasks();
-  }, [session]);
-
-  // Fetch tasks from API
-  const fetchTasks = async (notifyExpired = true) => {
-    try {
-      const res = await fetch("/api/tasks");
-      if (!res.ok) throw new Error();
-      const data: Task[] = await res.json();
-      setTasks(data);
-      setTasksLoadFailed(false);
-      if (notifyExpired) {
-        const now = new Date();
-        const expired = data.filter(
-          (t) => t.dueDate && new Date(t.dueDate) < now && !t.done,
-        );
-        if (expired.length > 0) {
-          toast.error(`Você tem ${expired.length} tarefa(s) vencida(s)`);
-        }
-      }
-    } catch {
-      setTasksLoadFailed(true);
-    } finally {
-      setTasksLoading(false);
-    }
-  };
-
-  // Add new task
-  const addTask = async () => {
-    if (!title.trim()) return toast.error("Título não pode ficar vazio");
-    try {
-      const res = await fetch("/api/tasks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, dueDate, recurrence }),
-      });
-      if (!res.ok) throw new Error();
-      toast.success("Tarefa criada!");
-      setTitle("");
-      setDueDate("");
-      setRecurrence("none");
-      await fetchTasks(false);
-    } catch {
-      toast.error("Erro ao criar tarefa");
-    }
-  };
-
-  // Toggle done status
-  const toggleDone = async (task: Task) => {
-    try {
-      await fetch("/api/tasks", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ _id: task._id, done: !task.done }),
-      });
-      toast.success(
-        task.done ? "Tarefa marcada como pendente" : "Tarefa concluída",
-      );
-      fetchTasks();
-    } catch {
-      toast.error("Erro ao atualizar status");
-    }
-  };
-
-  // Delete single task
-  const deleteOne = async (task: Task) => {
-    try {
-      await fetch("/api/tasks", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ _id: task._id }),
-      });
-      toast.success("Tarefa removida");
-      await fetchTasks(false);
-    } catch {
-      toast.error("Erro ao deletar tarefa");
-    }
-  };
-
-  // Start and cancel inline editing
-  const startEditing = (task: Task) => {
-    setEditingTaskId(task._id);
-    setEditingTitle(task.title);
-    const date = task.dueDate ? new Date(task.dueDate) : null;
-    setEditingDueDate(
-      date
-        ? new Date(date.getTime() - date.getTimezoneOffset() * 60000)
-            .toISOString()
-            .slice(0, 16)
-        : "",
-    );
-    setEditingRecurrence(task.recurrence);
-  };
-  const cancelEditing = () => {
-    setEditingTaskId(null);
-    setEditingTitle("");
-  };
-
-  // Save inline edit
-  const saveEdit = async () => {
-    if (!editingTaskId) return;
-    if (!editingTitle.trim()) {
-      cancelEditing();
-      return toast.error("Título não pode ficar vazio");
-    }
-    try {
-      await fetch("/api/tasks", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          _id: editingTaskId,
-          title: editingTitle.trim(),
-          dueDate: editingDueDate,
-          recurrence: editingRecurrence,
-        }),
-      });
-      toast.success("Tarefa atualizada!");
-      cancelEditing();
-      fetchTasks();
-    } catch {
-      toast.error("Erro ao salvar edição");
-    }
-  };
-
-  // Batch selection handlers
-  const toggleSelect = (id: string) =>
-    setSelected((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
-    );
-
-  // Confirmed batch operations
-  const handleBatchMark = async () => {
-    for (const id of selected) {
-      await fetch("/api/tasks", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ _id: id, done: true }),
-      });
-    }
-    toast.success("Tarefas marcadas como feitas");
-    setSelected([]);
-    setBatchMode(false);
-    setShowConfirmMark(false);
-    fetchTasks();
-  };
-  const handleBatchDelete = async () => {
-    for (const id of selected) {
-      await fetch("/api/tasks", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ _id: id }),
-      });
-    }
-    toast.success("Tarefas deletadas");
-    setSelected([]);
-    setBatchMode(false);
-    setShowConfirmDelete(false);
-    fetchTasks();
-  };
-
-  // Export / Import
-  const handleExport = () => {
-    const blob = new Blob([JSON.stringify(tasks, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "tasks.json";
-    a.click();
-    URL.revokeObjectURL(url);
-  };
-  const handleImportClick = () => fileInputRef.current?.click();
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try {
-      const text = await file.text();
-      const imported: Partial<Task>[] = JSON.parse(text);
-      for (const t of imported) {
-        if (!t.title) continue;
-        const res = await fetch("/api/tasks", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            title: t.title,
-            dueDate: t.dueDate,
-            recurrence: t.recurrence,
-          }),
-        });
-        if (res.ok && t.done) {
-          const created = await res.json();
-          await fetch("/api/tasks", {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ _id: created._id, done: true }),
-          });
-        }
-      }
-      toast.success("Tarefas importadas!");
-      fetchTasks();
-    } catch {
-      toast.error("Erro ao importar tarefas");
-    }
-  };
-
-  // Filter, search, sort
-  const displayedTasks = tasks
-    .filter((t) => t.title.toLowerCase().includes(searchTerm.toLowerCase()))
-    .filter((t) =>
-      filter === "all" ? true : filter === "pending" ? !t.done : t.done,
-    )
-    .sort((a, b) =>
-      sortOrder === "asc"
-        ? a.title.localeCompare(b.title)
-        : b.title.localeCompare(a.title),
-    );
-
-  const completedCount = tasks.filter((task) => task.done).length;
-  const pendingCount = tasks.length - completedCount;
-  const overdueCount = tasks.filter(
-    (task) => !task.done && task.dueDate && new Date(task.dueDate) < new Date(),
-  ).length;
-  const progress = tasks.length
-    ? Math.round((completedCount / tasks.length) * 100)
-    : 0;
-
+  const {
+    tasks,
+    tasksLoading,
+    tasksLoadFailed,
+    title,
+    setTitle,
+    dueDate,
+    setDueDate,
+    recurrence,
+    setRecurrence,
+    editingTaskId,
+    editingTitle,
+    setEditingTitle,
+    editingDueDate,
+    setEditingDueDate,
+    editingRecurrence,
+    setEditingRecurrence,
+    filter,
+    setFilter,
+    searchTerm,
+    setSearchTerm,
+    sortOrder,
+    setSortOrder,
+    batchMode,
+    setBatchMode,
+    selected,
+    setSelected,
+    showConfirmMark,
+    setShowConfirmMark,
+    showConfirmDelete,
+    setShowConfirmDelete,
+    fileInputRef,
+    retryTasks,
+    addTask,
+    toggleDone,
+    deleteOne,
+    startEditing,
+    cancelEditing,
+    saveEdit,
+    toggleSelect,
+    handleBatchMark,
+    handleBatchDelete,
+    handleExport,
+    handleImportClick,
+    handleFileChange,
+  } = useTaskWorkspace(status === "authenticated");
+  const displayedTasks = selectTasks(tasks, searchTerm, filter, sortOrder);
+  const { completedCount, pendingCount, overdueCount, progress } =
+    summarizeTasks(tasks);
   if (status === "loading")
     return (
       <main className="loading-screen" role="status">
@@ -360,89 +73,7 @@ export default function Home() {
         Preparando seu espaço…
       </main>
     );
-  if (!session) {
-    return (
-      <main className="login-page">
-        <header className="login-header">
-          <Brand />
-          <ThemeToggle />
-        </header>
-        <div className="login-layout">
-          <section className="login-intro">
-            <span className="eyebrow">MENOS RUÍDO. MAIS FOCO.</span>
-            <h1>
-              Seu dia, com
-              <br />
-              <span>mais espaço.</span>
-            </h1>
-            <p>
-              Reúna suas tarefas, organize seus próximos passos e acompanhe cada
-              pequena conquista.
-            </p>
-            <div className="login-features">
-              <span>
-                <Icon name="check" />
-                Tarefas no seu ritmo
-              </span>
-              <span>
-                <Icon name="calendar" />
-                Prazos e recorrência
-              </span>
-              <span>
-                <Icon name="grid" />
-                Tudo em um só lugar
-              </span>
-            </div>
-          </section>
-          <section className="login-card">
-            <div className="login-card-icon">
-              <Icon name="check" size={32} />
-            </div>
-            <h2>Bem-vindo ao TaskyHub</h2>
-            <p>Um lugar para organizar o que vem a seguir.</p>
-            <button
-              className="button google-button"
-              onClick={() => signIn("google")}
-            >
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-              >
-                <path
-                  fill="#4285F4"
-                  d="M22 12.2c0-.7-.1-1.4-.2-2.2H12v4.2h5.6a4.8 4.8 0 0 1-2.1 3.1v2.6h3.4c2-1.8 3.1-4.5 3.1-7.7Z"
-                />
-                <path
-                  fill="#34A853"
-                  d="M12 22c2.8 0 5.2-.9 6.9-2.5l-3.4-2.6c-.9.6-2 .9-3.5.9a6 6 0 0 1-5.7-4.2H2.8v2.7A10.4 10.4 0 0 0 12 22Z"
-                />
-                <path
-                  fill="#FBBC05"
-                  d="M6.3 13.6a6 6 0 0 1 0-3.2V7.7H2.8a10 10 0 0 0 0 8.6Z"
-                />
-                <path
-                  fill="#EA4335"
-                  d="M12 6.2c1.5 0 2.8.5 3.8 1.5L19 4.6A10 10 0 0 0 2.8 7.7l3.5 2.7A6 6 0 0 1 12 6.2Z"
-                />
-              </svg>
-              Entrar com Google
-              <Icon name="arrow" size={18} />
-            </button>
-            <small>Seu planejamento começa com um próximo passo.</small>
-            <div className="login-card-bottom">
-              <span className="status-dot" />
-              Seu espaço pessoal de produtividade
-            </div>
-          </section>
-        </div>
-        <footer className="login-footer">
-          TASKYHUB <span>Feito para simplificar o seu dia.</span>
-        </footer>
-      </main>
-    );
-  }
+  if (!session) return <LoginPage />;
 
   return (
     <AppShell name={session.user?.name}>
@@ -683,7 +314,11 @@ export default function Home() {
           <div className="empty-state panel" role="status">
             <h3>Suas tarefas estão indisponíveis no momento</h3>
             <p>Tente carregar a lista novamente em instantes.</p>
-            <button className="button compact" style={{ marginTop: 16 }} onClick={() => { setTasksLoading(true); fetchTasks(false); }}>
+            <button
+              className="button compact"
+              style={{ marginTop: 16 }}
+              onClick={retryTasks}
+            >
               Tentar novamente
             </button>
           </div>
