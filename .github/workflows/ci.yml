@@ -1,0 +1,33 @@
+name: TaskyHub CI
+on:
+  push:
+    branches: [master, develop]
+  pull_request:
+    branches: [master, develop]
+permissions:
+  contents: read
+jobs:
+  validate:
+    name: TaskyHub Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+      MONGODB_URI: mongodb://127.0.0.1:27017/taskyhub_ci
+      GOOGLE_CLIENT_ID: ci-placeholder
+      GOOGLE_CLIENT_SECRET: ci-placeholder
+      NEXTAUTH_SECRET: ci-placeholder-not-a-production-secret
+      NEXTAUTH_URL: http://localhost:3000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm build
