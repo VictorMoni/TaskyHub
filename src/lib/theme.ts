@@ -1,0 +1,1 @@
+export const themeScript = "(() => {\n  const root = document.documentElement;\n  let saved;\n  try { saved = localStorage.getItem('theme'); } catch {}\n  const dark = saved === 'dark' || (saved !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);\n  root.classList.toggle('dark', dark);\n  root.style.colorScheme = dark ? 'dark' : 'light';\n})();";
